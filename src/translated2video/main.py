@@ -28,7 +28,7 @@ def add_figure(video: cv2.VideoWriter, figure: cv2.typing.MatLike, frame: int):
 
 
 @click.command()
-@click.option("--rate", "-r", default=30, help="视频帧率.")
+@click.option("--rate", "-r", default=24, help="视频帧率.")
 @click.option("--interval", "-i", default=10, help="图片持续时间（秒）.")
 @click.option("--transit", "-t", default=500, help="图片过渡时间（毫秒）.")
 @click.option("--width", "-w", default=-1, help="视频宽度, -1表示自动计算.")
