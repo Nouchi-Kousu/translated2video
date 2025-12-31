@@ -20,3 +20,4 @@ build-backend = "uv_build"
 
 [project.scripts]
 t2v = "translated2video.main:main"
+t2f = "translated2video.t2f:main"
