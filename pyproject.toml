@@ -1,0 +1,22 @@
+[project]
+name = "translated2video"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Nouchi", email = "nouchipri@outlook.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "click>=8.3.1",
+    "numpy>=2.4.0",
+    "opencv-python>=4.11.0.86",
+    "rich>=14.2.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.8,<0.10.0"]
+build-backend = "uv_build"
+
+[project.scripts]
+t2v = "translated2video.main:main"
