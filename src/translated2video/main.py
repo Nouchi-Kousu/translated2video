@@ -4,6 +4,9 @@ import cv2.typing
 from rich.progress import track
 from rich import print
 import cv2
+import numpy as np
+import tempfile
+import shutil
 
 
 def cover(
@@ -44,7 +47,7 @@ def main(rate, interval, transit, width, height):
         os.path.join(path, f) for f in os.listdir(path) if f.endswith(".png")
     ]
     figure_list.sort()
-    figure_list = [cv2.imread(f, cv2.IMREAD_UNCHANGED) for f in figure_list]
+    figure_list = [cv2.imdecode(np.fromfile(f, dtype=np.uint8), cv2.IMREAD_UNCHANGED) for f in figure_list]
     raw_height, raw_width = figure_list[0].shape[:2]
 
     if width == -1 and height == -1:
@@ -58,8 +61,15 @@ def main(rate, interval, transit, width, height):
         cv2.resize(f, (width, height), interpolation=cv2.INTER_LINEAR)
         for f in figure_list
     ]
+
+    # 使用临时文件解决非ASCII路径问题
+    output_filename = f"{os.path.basename(path)}.mp4"
+    final_output_path = os.path.join(path, output_filename)
+    temp_fd, temp_path = tempfile.mkstemp(suffix=".mp4")
+    os.close(temp_fd)
+
     video = cv2.VideoWriter(
-        f"./{os.path.basename(path)}.mp4",
+        temp_path,
         cv2.VideoWriter.fourcc(*"mp4v"),
         rate,
         (width, height),
@@ -79,4 +89,8 @@ def main(rate, interval, transit, width, height):
         add_figure(video, video_figure, interval)
 
     video.release()
+
+    # 移动临时文件到目标路径
+    shutil.move(temp_path, final_output_path)
+
     print("[bold green]视频生成完成！[/bold green]")
