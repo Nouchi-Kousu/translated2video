@@ -4,6 +4,7 @@ import cv2.typing
 from rich.progress import track
 from rich import print
 import cv2
+import numpy as np
 
 
 def cover(
@@ -44,7 +45,7 @@ def main(rate, interval, transit, width, height):
         os.path.join(path, f) for f in os.listdir(path) if f.endswith(".png")
     ]
     figure_list.sort()
-    figure_list = [cv2.imread(f, cv2.IMREAD_UNCHANGED) for f in figure_list]
+    figure_list = [cv2.imdecode(np.fromfile(f, dtype=np.uint8), cv2.IMREAD_UNCHANGED) for f in figure_list]
     raw_height, raw_width = figure_list[0].shape[:2]
 
     if width == -1 and height == -1:
@@ -58,6 +59,7 @@ def main(rate, interval, transit, width, height):
         cv2.resize(f, (width, height), interpolation=cv2.INTER_LINEAR)
         for f in figure_list
     ]
+
     video = cv2.VideoWriter(
         f"./{os.path.basename(path)}.mp4",
         cv2.VideoWriter.fourcc(*"mp4v"),
@@ -79,4 +81,5 @@ def main(rate, interval, transit, width, height):
         add_figure(video, video_figure, interval)
 
     video.release()
+
     print("[bold green]视频生成完成！[/bold green]")
