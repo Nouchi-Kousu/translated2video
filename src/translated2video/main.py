@@ -37,7 +37,6 @@ def add_figure(video: cv2.VideoWriter, figure: cv2.typing.MatLike, frame: int):
 @click.option("--width", "-w", default=-1, help="视频宽度, -1表示自动计算.")
 @click.option("--height", "-h", default=-1, help="视频高度, -1表示自动计算.")
 def main(rate, interval, transit, width, height):
-    rate = int(rate)
     interval = int(interval) * rate
     transit = int(int(transit) / 1000.0 * rate)
     width = int(width)
