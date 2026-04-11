@@ -21,13 +21,13 @@ def main(file: str, translation: str = "翻译") -> tuple[NpFigure, list[NpFigur
         # 逐层处理图层，对于翻译图层组，对其子图层进行处理
         if layer.name == translation:
             if layer.is_group():
-                for sub_layer in layer: # pyright: ignore[reportGeneralTypeIssues]
+                for sub_layer in layer:  # type: ignore
                     translation_figure_list.append(psd_layer_to_NpFigure(sub_layer))
             else:
                 translation_figure_list.append(psd_layer_to_NpFigure(layer))
         else:
             background_figure_list.append(psd_layer_to_NpFigure(layer))
 
-    background_figure: NpFigure = composite_figure(background_figure_list, psd.size)  # 将背景图层列表合成为单图
-
+    # 将背景图层列表合成为单图
+    background_figure: NpFigure = composite_figure(background_figure_list, psd.size)
     return background_figure, translation_figure_list

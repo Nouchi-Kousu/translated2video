@@ -2,94 +2,156 @@ import click
 import os
 import cv2.typing
 from rich.progress import track
-from rich import print
 import cv2
 import numpy as np
 import tempfile
 import shutil
+from .utils import time_analysis, NpFigure_resize_in_background, composite_figure
+from .type import NpFigure
 
 
-def cover(
-    background: cv2.typing.MatLike, figure: cv2.typing.MatLike
+def _to_video_frame(
+    figure: cv2.typing.MatLike, width: int, height: int
 ) -> cv2.typing.MatLike:
-    """使用figure覆盖background，右上角对齐"""
-    fg_h, fg_w = figure.shape[:2]
-    fg_alpha = figure[:, :, 3] / 255.0
-    bg_alpha = 1.0 - fg_alpha
-    background = background.copy()
-    background[:fg_h, -fg_w:] = (
-        background[:fg_h, -fg_w:] * bg_alpha[:, :, None]
-        + figure[:, :, :3] * fg_alpha[:, :, None]
-    )
-    return background
+    """将任意输入帧规范为视频可写入的 BGR 三通道帧。"""
+    if figure.shape[1] != width or figure.shape[0] != height:
+        figure = cv2.resize(figure, (width, height), interpolation=cv2.INTER_LINEAR)
+
+    if figure.dtype != np.uint8:
+        figure = np.clip(figure, 0, 255).astype(np.uint8)
+
+    if len(figure.shape) == 2:
+        return cv2.cvtColor(figure, cv2.COLOR_GRAY2BGR)
+
+    channels = figure.shape[2]
+    if channels == 4:
+        return cv2.cvtColor(figure, cv2.COLOR_BGRA2BGR)
+    if channels == 3:
+        return figure
+
+    raise ValueError(f"不支持的图像通道数: {channels}")
 
 
-def add_figure(video: cv2.VideoWriter, figure: cv2.typing.MatLike, frame: int):
+def add_figure(
+    video: cv2.VideoWriter,
+    figure: cv2.typing.MatLike,
+    frame: int,
+    width: int,
+    height: int,
+):
     """向视频中添加figure，持续frame帧"""
+    bgr_figure = _to_video_frame(figure, width, height)
     for _ in range(frame):
-        video.write(figure)
+        video.write(bgr_figure)
+
+
+def _create_video_writer(
+    output_path: str, rate: int, size: tuple[int, int]
+) -> tuple[cv2.VideoWriter, str]:
+    """初始化可用的视频编码器，优先 MP4 常见编码。"""
+    for codec in ("mp4v", "avc1", "H264"):
+        writer = cv2.VideoWriter(
+            output_path,
+            cv2.VideoWriter.fourcc(*codec),
+            rate,
+            size,
+        )
+        if writer.isOpened():
+            return writer, codec
+        writer.release()
+
+    raise RuntimeError("无法初始化视频编码器（已尝试 mp4v/avc1/H264），请检查 OpenCV/FFmpeg 编码支持。")
 
 
 @click.command()
+@click.option("--input", "-i", default="input.psd", help="输入的 PSD 文件路径.")
 @click.option("--rate", "-r", default=24, help="视频帧率.")
-@click.option("--interval", "-i", default=10, help="图片持续时间（秒）.")
-@click.option("--transit", "-t", default=500, help="图片过渡时间（毫秒）.")
+@click.option("--interval", "-l", default="10s", help="图片持续时间.")
+@click.option("--transit", "-t", default="500ms", help="图片过渡时间.")
 @click.option("--width", "-w", default=-1, help="视频宽度, -1表示自动计算.")
 @click.option("--height", "-h", default=-1, help="视频高度, -1表示自动计算.")
-def main(rate, interval, transit, width, height):
-    interval = int(interval) * rate
-    transit = int(int(transit) / 1000.0 * rate)
-    width = int(width)
-    height = int(height)
-    path = os.getcwd()
-    figure_list = [
-        os.path.join(path, f) for f in os.listdir(path) if f.endswith(".png")
-    ]
-    figure_list.sort()
-    figure_list = [cv2.imdecode(np.fromfile(f, dtype=np.uint8), cv2.IMREAD_UNCHANGED) for f in figure_list]
-    raw_height, raw_width = figure_list[0].shape[:2]
+@click.option(
+    "--group", "-g", default="翻译", help="包含翻译图层的组名称，默认为 '翻译'"
+)
+def main(
+    input: str = "input.psd",
+    rate: int = 24,
+    interval: str = "10s",
+    transit: str = "500ms",
+    width: int = -1,
+    height: int = -1,
+    group: str = "翻译",
+):
+    assert os.path.isfile(input), f"输入文件 {input} 不存在。"
+    assert input.lower().endswith(".psd"), f"输入文件 {input} 不是 PSD 文件。"
+    interval_rate = time_analysis(interval) * rate // (1000 * 1000)
+    transit_rate = time_analysis(transit) * rate // (1000 * 1000)
+    from .psd2figure import main as psd2figure_main
 
-    if width == -1 and height == -1:
-        width, height = raw_width, raw_height
-    elif width == -1:
-        width = int(raw_width * (height / raw_height))
-    elif height == -1:
-        height = int(raw_height * (width / raw_width))
-
-    figure_list = [
-        cv2.resize(f, (width, height), interpolation=cv2.INTER_LINEAR)
-        for f in figure_list
-    ]
-
-    # 使用临时文件解决非ASCII路径问题
-    output_filename = f"{os.path.basename(path)}.mp4"
-    final_output_path = os.path.join(path, output_filename)
-    temp_fd, temp_path = tempfile.mkstemp(suffix=".mp4")
-    os.close(temp_fd)
-
-    video = cv2.VideoWriter(
-        temp_path,
-        cv2.VideoWriter.fourcc(*"mp4v"),
-        rate,
-        (width, height),
+    background_figure, translation_figure_list = psd2figure_main(
+        input, translation=group
     )
+    if width == -1 and height == -1:
+        height, width = background_figure["fig"].shape[:2]
+    elif width == -1:
+        width = int(
+            background_figure["fig"].shape[1]
+            * height
+            / background_figure["fig"].shape[0]
+        )
+    elif height == -1:
+        height = int(
+            background_figure["fig"].shape[0]
+            * width
+            / background_figure["fig"].shape[1]
+        )
 
-    # 创建画布
-    video_figure = figure_list[0].copy()
-    # 添加第一张图片（无过渡）
-    add_figure(video, video_figure, interval)
-    # 添加后续图片（有过渡）
-    for i in track(range(1, len(figure_list)), description="正在生成视频..."):
-        figure = figure_list[i]
-        for j in range(transit):
-            cover_width = (j + 1) * width // transit
-            video.write(cover(video_figure, figure[:, -cover_width:]))
-        video_figure = cover(video_figure, figure)
-        add_figure(video, video_figure, interval)
+    translation_figure_list = [
+        NpFigure_resize_in_background(fig, (width, height), old_size=background_figure["fig"].shape[1::-1])
+        for fig in translation_figure_list
+    ]
+    background_figure = NpFigure_resize_in_background(
+        background_figure, (width, height)
+    )
+    work_path, file_name = os.path.split(os.path.abspath(input))
+    tmp_file, tmp_path = tempfile.mkstemp(suffix=".mp4")
+    os.close(tmp_file)
+    video, codec = _create_video_writer(tmp_path, rate, (width, height))
+
+    video.write(_to_video_frame(background_figure["fig"], width, height))
+    for figure in track(
+        translation_figure_list,
+        description="正在生成视频...",
+        total=len(translation_figure_list),
+    ):
+        for transit_rate_index in range(transit_rate):
+            rate_fig = figure["fig"][
+                :, -figure["fig"].shape[1] * (transit_rate_index + 1) // transit_rate :, :
+            ]
+            old_bbox = figure["bbox"]
+            new_bbox = (
+                old_bbox[2] - rate_fig.shape[1],
+                old_bbox[1],
+                old_bbox[2],
+                old_bbox[3],
+            )
+            video.write(
+                _to_video_frame(
+                    composite_figure(
+                        [NpFigure(fig=rate_fig, bbox=new_bbox)],
+                        bg_fig=background_figure["fig"],
+                    )["fig"],
+                    width,
+                    height,
+                )
+            )
+
+        background_figure = composite_figure([figure], bg_fig=background_figure["fig"])
+        add_figure(video, background_figure["fig"], interval_rate, width, height)
 
     video.release()
-
-    # 移动临时文件到目标路径
-    shutil.move(temp_path, final_output_path)
-
-    print("[bold green]视频生成完成！[/bold green]")
+    output_name = f"{os.path.splitext(file_name)[0]}_output.mp4"
+    shutil.move(
+        tmp_path, os.path.join(work_path, output_name)
+    )
+    print(f"视频已导出: {output_name} (codec={codec})")

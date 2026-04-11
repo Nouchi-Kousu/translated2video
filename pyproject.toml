@@ -1,6 +1,6 @@
 [project]
 name = "translated2video"
-version = "0.1.1"
+version = "1.0.0"
 description = "Add your description here"
 readme = "README.md"
 authors = [
@@ -20,4 +20,3 @@ build-backend = "uv_build"
 
 [project.scripts]
 t2v = "translated2video.main:main"
-t2f = "translated2video.t2f:main"

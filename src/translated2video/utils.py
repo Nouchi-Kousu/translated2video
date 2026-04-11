@@ -6,18 +6,6 @@ import psd_tools.api.layers
 from .type import NpFigure, BBox
 
 
-# COLOR_MODE = {
-#     0: "BITMAP",
-#     1: "GRAYSCALE",
-#     2: "INDEXED",
-#     3: "RGB",
-#     4: "CMYK",
-#     7: "MULTICHANNEL",
-#     8: "DUOTONE",
-#     9: "LAB",
-# }
-
-
 def psd_layer_to_NpFigure(layer: psd_tools.api.layers.Layer) -> NpFigure:
     """
     将 PSD 图层（RGBA）转换为 NpFigure 对象（BGRA）
@@ -67,15 +55,17 @@ def NpFigure_resize_in_background(
     old_size = (
         old_size if old_size is not None else (bbox[2] - bbox[0], bbox[3] - bbox[1])
     )  # 如果未提供旧尺寸，则使用 figure 的 bbox 大小作为旧尺寸
+    width_ratio = new_size[0] / old_size[0]
+    height_ratio = new_size[1] / old_size[1]
     figure_new_size: tuple[int, int] = (
-        int(figure_size[0] * new_size[0] / old_size[0]),
-        int(figure_size[1] * new_size[1] / old_size[1]),
+        int(figure_size[0] * width_ratio),
+        int(figure_size[1] * height_ratio),
     )  # 计算 figure 的新尺寸，保持相对大小不变
     new_bbox: BBox = (
-        int(bbox[0] * new_size[0] / old_size[0]),
-        int(bbox[1] * new_size[1] / old_size[1]),
-        bbox[0] + figure_new_size[0],
-        bbox[1] + figure_new_size[1],
+        int(bbox[0] * width_ratio),
+        int(bbox[1] * height_ratio),
+        int(bbox[0] * width_ratio) + figure_new_size[0],
+        int(bbox[1] * height_ratio) + figure_new_size[1],
     )  # 计算 figure 的新 bbox，保持相对位置不变
 
     resized_fig: MatLike = cv2.resize(
@@ -140,3 +130,47 @@ def composite_figure(
         )
 
     return NpFigure(fig=background_fig, bbox=(0, 0, size[0], size[1]))
+
+
+def time_analysis(time: str) -> int:
+    """
+    将形如 1d2h3m4s5ms6us 的时间字符串转换为微秒数
+
+    :param time: 需要转换的时间字符串
+    :type time: str
+    :return: 时间对应的微秒数
+    :rtype: int
+    """
+    time = time.lower()
+    time_units = {
+        "d": 24 * 60 * 60 * 1000 * 1000,
+        "h": 60 * 60 * 1000 * 1000,
+        "m": 60 * 1000 * 1000,
+        "s": 1000 * 1000,
+        "ms": 1000,
+        "us": 1,
+    }  # 定义时间单位与对应的微秒数
+    # 拆解时间字符串，提取数字和单位
+    time_list = []
+    now_time = ""
+    now_time_unit = ""
+    for char in time:
+        if char.isdigit():
+            if now_time_unit:
+                time_list.append((now_time, now_time_unit))
+                now_time = ""
+                now_time_unit = ""
+            now_time += char
+        else:
+            now_time_unit += char
+    if now_time and now_time_unit:
+        # 处理最后一个时间单位
+        time_list.append((now_time, now_time_unit))
+    # 计算总的微秒数
+    total_time = 0
+    for time_item in time_list:
+        try:
+            total_time += int(time_item[0]) * time_units[time_item[1]]
+        except KeyError:
+            raise ValueError(f"Invalid time unit: {time_item[1]}")
+    return total_time
