@@ -199,9 +199,9 @@ def main(
     ]
 
     log.info(f"共找到 {len(input_file_list)} 个 PSD 文件，开始读取文件...")
-    poll = multiprocessing.Pool()
+    with multiprocessing.Pool() as poll:
+        figure_list = poll.map(process_psd, input_file_list)
 
-    figure_list = poll.map(process_psd, input_file_list)
     log.info("文件读取完成，开始处理...")
     with Progress() as progress:
         with multiprocessing.Manager() as manager:
